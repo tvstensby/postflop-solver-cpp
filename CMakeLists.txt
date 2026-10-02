@@ -19,6 +19,7 @@ option(PFS_ENABLE_ZSTD          "zstd compression for save/load"              OF
 option(PFS_CUSTOM_ALLOC         "Thread-local bump arena for solver temps"    OFF)
 option(PFS_BUILD_TESTS          "Build the test suite"       ${PROJECT_IS_TOP_LEVEL})
 option(PFS_BUILD_EXAMPLES       "Build the examples"         ${PROJECT_IS_TOP_LEVEL})
+option(PFS_BUILD_SOLVER         "Build the postflop-solver application" ${PROJECT_IS_TOP_LEVEL})
 set(PFS_ARCH "" CACHE STRING "ISA baseline: '' | AVX2")
 
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -102,7 +103,7 @@ if(PFS_ENABLE_ZSTD)
 endif()
 
 # ---------------------------------------------------------------------------
-# Tests and examples
+# Tests, examples and the solver application
 # ---------------------------------------------------------------------------
 if(PFS_BUILD_TESTS)
   enable_testing()
@@ -111,4 +112,8 @@ endif()
 
 if(PFS_BUILD_EXAMPLES)
   add_subdirectory(examples)
+endif()
+
+if(PFS_BUILD_SOLVER)
+  add_subdirectory(solver)
 endif()
