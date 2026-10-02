@@ -63,7 +63,8 @@ build-vscode/solver/Release/postflop-solver.exe game.json --output result.json
 ```
 
 - The two repositories exchange data only through files, mostly json: the input game file
-  described in `solver/src/game_file.hpp`) and the result described in `solver/src/result_file.hpp`).
+  (`poker-tools/game`) and range file (`poker-tools/range`, used with `--ranges`), both described
+  in `solver/src/game_file.hpp`, and the result described in `solver/src/result_file.hpp`.
   When either format changes, update the other repository's reader or writer too and bump the format version.
 - Both repositories build on their own. `third-party/nlohmann` is a copy of the one in
   `../poker-tools/third-party/nlohmann`. Keep the copies at the same version.

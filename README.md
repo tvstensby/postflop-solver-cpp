@@ -118,8 +118,12 @@ PFS_RUN_SLOW=1 ./build/tests/pfs_tests
 in the separate poker-tools repository and writes the solution as json:
 
 ```sh
-postflop-solver game.json --output result.json [--iterations 1000] [--exploitability 0.25] [--compress] [--quiet]
+postflop-solver game.json --output result.json [--ranges ranges.json] [--iterations 1000] [--exploitability 0.25] [--compress] [--quiet]
 ```
+
+`--ranges` solves the game tree with the ranges of a range file (`poker-tools/range`,
+e.g. preflop ranges exported by poker-tools' hrc-analyzer) instead of the game file's
+ranges. It warns when the range file's stack-to-pot ratio differs from the game's.
 
 `--exploitability` is the target as a percentage of the starting pot, and `--compress`
 stores the solver data as 16-bit integers. The input format is described in

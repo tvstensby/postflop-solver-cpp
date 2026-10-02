@@ -1,5 +1,7 @@
 // Builds the result json written by postflop-solver (format "postflop-solver/result",
-// version 1):
+// version 2):
+//   - ranges and rangesFile: the ranges that were solved, and the range file they were
+//     read from (null if they are the game file's).
 //   - settings and solve: the solve parameters, the iterations used, the final
 //     exploitability (also as a percentage of the starting pot) and the time.
 //   - ev / equity: each player's average EV and equity at the root.

@@ -112,10 +112,12 @@ ordered_json build_result(pfs::PostFlopGame& game, const GameFile& file,
                           const SolveStats& stats) {
     ordered_json out;
     out["format"] = "postflop-solver/result";
-    out["version"] = 1;
+    out["version"] = 2;
     out["input"] = input_name;
     out["source"] = file.source;
     out["start"] = file.start_id;
+    out["rangesFile"] = file.ranges_source.empty() ? ordered_json(nullptr) : ordered_json(file.ranges_source);
+    out["ranges"] = {{"OOP", file.ranges[0]}, {"IP", file.ranges[1]}};
     out["chipScale"] = file.chip_scale;
     out["board"] = {{"flop", file.flop},
                     {"turn", file.turn.empty() ? ordered_json(nullptr) : ordered_json(file.turn)},

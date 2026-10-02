@@ -42,6 +42,8 @@ struct GameFile {
     std::string turn;   // empty if not dealt
     std::string river;  // empty if not dealt
     std::array<std::string, 2> ranges;  // [OOP, IP]
+    bool gto_ranges = false;            // ranges in GTO+ syntax, else Range::parse syntax
+    std::string ranges_source;          // the range file the ranges were read from, if any
     pfs::TreeConfig tree_config;
     std::vector<std::vector<pfs::Action>> add_lines;
     std::vector<std::vector<pfs::Action>> remove_lines;
@@ -49,6 +51,12 @@ struct GameFile {
 };
 
 pfs::Result<GameFile> read_game_file(const std::filesystem::path& path);
+
+// Replaces the game's ranges with those of a range file ("poker-tools/range" versions 1 and 2, written
+// by poker-tools' hrc-analyzer --export-range), so one game tree can be solved with different
+// ranges. The file has OOP and IP ranges in GTO+ syntax, the players' stacks and the pot (in its
+// own chip units). Sets warning if its stack-to-pot ratio differs from the game's.
+pfs::Status read_range_file(GameFile& file, const std::filesystem::path& path, std::string& warning);
 
 // Builds the action tree and checks every node of the file against it.
 pfs::Result<pfs::ActionTree> build_action_tree(const GameFile& file);

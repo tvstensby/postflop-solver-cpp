@@ -32,6 +32,8 @@ void print_usage() {
                  "\n"
                  "Solves a game exported by poker-tools and writes the solution as json.\n"
                  "  --output <file>             The result file (required).\n"
+                 "  --ranges <file>             Use the ranges of a range file (poker-tools/range)\n"
+                 "                              instead of the game file's ranges.\n"
                  "  --iterations <n>            Maximum number of iterations (default: %u).\n"
                  "  --exploitability <percent>  Stop when the exploitability is at most this\n"
                  "                              percentage of the starting pot (default: %g).\n"
@@ -63,6 +65,7 @@ int fail(const std::string& message) {
 int run(int argc, char* argv[]) {
     std::string input_path;
     std::string output_path;
+    std::string ranges_path;
     SolveSettings settings;
     settings.max_iterations = kDefaultIterations;
     settings.target_exploitability_percent = kDefaultExploitabilityPercent;
@@ -72,6 +75,8 @@ int run(int argc, char* argv[]) {
         const std::string arg = argv[i];
         if (arg == "--output" && i + 1 < argc) {
             output_path = argv[++i];
+        } else if (arg == "--ranges" && i + 1 < argc) {
+            ranges_path = argv[++i];
         } else if (arg == "--iterations" && i + 1 < argc) {
             if (!parse_unsigned(argv[++i], settings.max_iterations))
                 return fail(std::string("invalid number of iterations '") + argv[i] + "'");
@@ -99,6 +104,12 @@ int run(int argc, char* argv[]) {
 
     pfs::Result<GameFile> file = read_game_file(input_path);
     if (!file) return fail(file.error());
+    if (!ranges_path.empty()) {
+        std::string warning;
+        pfs::Status status = read_range_file(file.value(), ranges_path, warning);
+        if (!status) return fail(status.error());
+        if (!warning.empty()) std::fprintf(stderr, "Warning: %s\n", warning.c_str());
+    }
     pfs::Result<pfs::ActionTree> tree = build_action_tree(file.value());
     if (!tree) return fail(tree.error());
     pfs::Result<pfs::CardConfig> cards = build_card_config(file.value());

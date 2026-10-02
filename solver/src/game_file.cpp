@@ -4,6 +4,9 @@
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <fstream>
 #include <set>
 
@@ -77,6 +80,8 @@ Result<GameFile> read_game_file(const std::filesystem::path& path) {
 
         GameFile file;
         file.version = version;
+        // Version 1 has ranges in Range::parse syntax, version 2 in GTO+ syntax.
+        file.gto_ranges = version >= 2;
         file.source = data.value("source", "");
         file.start_id = data.at("start").at("id").get<std::string>();
         file.chip_scale = data.at("chipScale").get<double>();
@@ -121,6 +126,48 @@ Result<GameFile> read_game_file(const std::filesystem::path& path) {
         return file;
     } catch (const json::exception& e) {
         return Result<GameFile>::err("Invalid game file " + path.string() + ": " + e.what());
+    }
+}
+
+pfs::Status read_range_file(GameFile& file, const std::filesystem::path& path, std::string& warning) {
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) return pfs::Status::err("Could not open " + path.string());
+
+    try {
+        const json data = json::parse(stream);
+        if (data.value("format", "") != "poker-tools/range")
+            return pfs::Status::err(path.string() + " is not a poker-tools range file");
+        // Version 2 has the stacks and pot in chips, version 1 in hundredths of a chip. Only
+        // their ratio is used, so both work.
+        const int version = data.value("version", 0);
+        if (version != 1 && version != 2)
+            return pfs::Status::err("Unsupported range file version " +
+                                    std::to_string(data.value("version", 0)));
+
+        file.ranges[0] = data.at("ranges").at("OOP").get<std::string>();
+        file.ranges[1] = data.at("ranges").at("IP").get<std::string>();
+        file.gto_ranges = true;
+        file.ranges_source = path.filename().string();
+
+        // The pot and stacks are in the range file's own units, so compare the
+        // stack-to-pot ratios.
+        const double pot = data.at("pot").get<double>();
+        const double stack = std::min(data.at("stacks").at("OOP").get<double>(),
+                                      data.at("stacks").at("IP").get<double>());
+        const double game_spr = static_cast<double>(file.tree_config.effective_stack) /
+                                static_cast<double>(file.tree_config.starting_pot);
+        const double spr = pot > 0.0 ? stack / pot : 0.0;
+        warning.clear();
+        if (std::abs(spr - game_spr) > 0.01 * game_spr) {
+            char text[160];
+            std::snprintf(text, sizeof(text),
+                          "the stack-to-pot ratio of the range file (%.3f) differs from the game's (%.3f)",
+                          spr, game_spr);
+            warning = text;
+        }
+        return pfs::Status::ok();
+    } catch (const json::exception& e) {
+        return pfs::Status::err("Invalid range file " + path.string() + ": " + e.what());
     }
 }
 
@@ -175,9 +222,8 @@ Result<pfs::ActionTree> build_action_tree(const GameFile& file) {
 Result<pfs::CardConfig> build_card_config(const GameFile& file) {
     pfs::CardConfig config;
     for (size_t player = 0; player < 2; ++player) {
-        // Version 1 has ranges in Range::parse syntax, version 2 in GTO+ syntax.
-        Result<pfs::Range> range = file.version == 1 ? pfs::Range::parse(file.ranges[player])
-                                                     : parse_gto_range(file.ranges[player]);
+        Result<pfs::Range> range = file.gto_ranges ? parse_gto_range(file.ranges[player])
+                                                   : pfs::Range::parse(file.ranges[player]);
         if (!range)
             return Result<pfs::CardConfig>::err(std::string(player == 0 ? "OOP" : "IP") +
                                                 " range: " + range.error());
