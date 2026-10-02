@@ -1,0 +1,12 @@
+// Generated from cmake/config.hpp.in -- do not edit.
+//
+// Feature macros are baked into a generated header rather than passed as
+// -D flags so a consumer cannot silently disagree with the library about them.
+// PFS_CUSTOM_ALLOC in particular changes the type used inside inline template
+// code, so a mismatch would be an ODR violation.
+#pragma once
+
+#cmakedefine01 PFS_ENABLE_THREADS
+#cmakedefine01 PFS_CUSTOM_ALLOC
+#cmakedefine01 PFS_ENABLE_SERIALIZATION
+#cmakedefine01 PFS_ENABLE_ZSTD
