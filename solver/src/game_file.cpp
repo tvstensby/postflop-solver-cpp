@@ -66,8 +66,8 @@ Result<GameFile> read_game_file(const std::filesystem::path& path) {
 
     try {
         const json data = json::parse(stream);
-        if (data.value("format", "") != "gto-pluss-exporter/game")
-            return Result<GameFile>::err(path.string() + " is not a gto-pluss-exporter game file");
+        if (data.value("format", "") != "poker-tools/game")
+            return Result<GameFile>::err(path.string() + " is not a poker-tools exporter game file");
         if (data.value("version", 0) != 1)
             return Result<GameFile>::err("Unsupported game file version " +
                                          std::to_string(data.value("version", 0)));

@@ -1,5 +1,5 @@
-// Reads the game files written by gto-pluss-exporter (`--export-game`, format
-// "gto-pluss-exporter/game" version 1) and builds the corresponding game.
+// Reads the game files written by poker-tools exporters and builds the corresponding game.
+// Format: "poker-tools/game" version 1
 //
 // The file describes the game in this library's own terms:
 //   - treeConfig: initial state, starting pot, effective stack and rake. The tree

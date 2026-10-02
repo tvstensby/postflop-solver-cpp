@@ -1,4 +1,4 @@
-// postflop-solver: solves a game exported by gto-pluss-exporter (`--export-game`)
+// postflop-solver: solves a game exported by poker-tools exporters
 // and writes the solution as json. See game_file.hpp for the input and
 // result_file.hpp for the output.
 #include "game_file.hpp"
@@ -30,8 +30,7 @@ void print_usage() {
     std::fprintf(stderr,
                  "Usage: postflop-solver <game.json> --output <result.json> [options]\n"
                  "\n"
-                 "Solves a game exported by gto-pluss-exporter (--export-game) and writes the\n"
-                 "solution as json.\n"
+                 "Solves a game exported by poker-tools and writes the solution as json.\n"
                  "  --output <file>             The result file (required).\n"
                  "  --iterations <n>            Maximum number of iterations (default: %u).\n"
                  "  --exploitability <percent>  Stop when the exploitability is at most this\n"

@@ -110,6 +110,22 @@ PioSOLVER-verified presets are skipped by default:
 PFS_RUN_SLOW=1 ./build/tests/pfs_tests
 ```
 
+## Command line solver
+
+`solver/` builds `postflop-solver`, which solves a game exported in JSON format by tools
+in the separate poker-tools repository and writes the solution as json:
+
+```sh
+postflop-solver game.json --output result.json [--iterations 1000] [--exploitability 0.25] [--compress] [--quiet]
+```
+
+`--exploitability` is the target as a percentage of the starting pot, and `--compress`
+stores the solver data as 16-bit integers. The input format is described in
+`solver/src/game_file.hpp` and the output format in `solver/src/result_file.hpp`. The
+result has the strategy, EVs and equity per hand for every node of the first street.
+nlohmann/json, which it uses for parsing, is included in `third-party/nlohmann` (MIT).
+It is built when this is the top-level project (`PFS_BUILD_SOLVER`).
+
 ## Implementation notes
 
 - **Algorithm**: Discounted CFR with γ = 3.0 (not the paper's 2.0), and the
