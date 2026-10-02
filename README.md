@@ -7,6 +7,8 @@ Original work Copyright (C) 2022 Wataru Inariba, licensed AGPL-3.0-or-later. Thi
 port is a derivative work and carries the same license — see [LICENSE](LICENSE).
 The Rust sources this was ported from are in `../postflop-solver-main`.
 
+**Notice: Both the porting and extensions/changes to this repository is primarily done using VIBE coding.**
+
 ## Building
 
 Requires a C++20 compiler and CMake 3.24+. No external dependencies in the
