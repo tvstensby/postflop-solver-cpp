@@ -1,5 +1,7 @@
 #include "game_file.hpp"
 
+#include "gto_range.hpp"
+
 #include <nlohmann/json.hpp>
 
 #include <fstream>
@@ -68,11 +70,13 @@ Result<GameFile> read_game_file(const std::filesystem::path& path) {
         const json data = json::parse(stream);
         if (data.value("format", "") != "poker-tools/game")
             return Result<GameFile>::err(path.string() + " is not a poker-tools exporter game file");
-        if (data.value("version", 0) != 1)
+        const int version = data.value("version", 0);
+        if (version != 1 && version != 2)
             return Result<GameFile>::err("Unsupported game file version " +
                                          std::to_string(data.value("version", 0)));
 
         GameFile file;
+        file.version = version;
         file.source = data.value("source", "");
         file.start_id = data.at("start").at("id").get<std::string>();
         file.chip_scale = data.at("chipScale").get<double>();
@@ -171,7 +175,9 @@ Result<pfs::ActionTree> build_action_tree(const GameFile& file) {
 Result<pfs::CardConfig> build_card_config(const GameFile& file) {
     pfs::CardConfig config;
     for (size_t player = 0; player < 2; ++player) {
-        Result<pfs::Range> range = pfs::Range::parse(file.ranges[player]);
+        // Version 1 has ranges in Range::parse syntax, version 2 in GTO+ syntax.
+        Result<pfs::Range> range = file.version == 1 ? pfs::Range::parse(file.ranges[player])
+                                                     : parse_gto_range(file.ranges[player]);
         if (!range)
             return Result<pfs::CardConfig>::err(std::string(player == 0 ? "OOP" : "IP") +
                                                 " range: " + range.error());

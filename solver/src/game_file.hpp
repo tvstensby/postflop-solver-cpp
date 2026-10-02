@@ -1,5 +1,5 @@
 // Reads the game files written by poker-tools exporters and builds the corresponding game.
-// Format: "poker-tools/game" version 1
+// Format: "poker-tools/game" versions 1 and 2
 //
 // The file describes the game in this library's own terms:
 //   - treeConfig: initial state, starting pot, effective stack and rake. The tree
@@ -7,7 +7,8 @@
 //     call, and the bets are added from addLines.
 //   - addLines / removeLines: lines in Action::to_string notation ("Bet(4500)",
 //     "Raise(10500)", "AllIn(40000)", "Call", ...), applied in order.
-//   - ranges: range strings in Range::parse syntax.
+//   - ranges: in GTO+ syntax (see gto_range.hpp) in version 2, in Range::parse
+//     syntax in version 1.
 //   - nodes: every action node with its history, actions and pot, used to check
 //     that the tree was rebuilt as intended.
 // All amounts are integers: GTO+ chips times chipScale.
@@ -33,6 +34,7 @@ struct GameFileNode {
 };
 
 struct GameFile {
+    int version = 0;
     std::string source;  // the GTO+ file the game was exported from
     std::string start_id;
     double chip_scale = 1.0;

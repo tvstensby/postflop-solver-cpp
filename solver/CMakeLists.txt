@@ -1,6 +1,8 @@
 add_executable(postflop-solver
   src/game_file.hpp
   src/game_file.cpp
+  src/gto_range.hpp
+  src/gto_range.cpp
   src/result_file.hpp
   src/result_file.cpp
   src/main.cpp
