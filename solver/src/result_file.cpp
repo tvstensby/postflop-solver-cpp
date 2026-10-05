@@ -12,16 +12,6 @@ namespace {
 
 const char* const kPlayerNames[2] = {"OOP", "IP"};
 
-double rounded(double value, int decimals) {
-    const double scale = std::pow(10.0, decimals);
-    return std::round(value * scale) / scale;
-}
-
-std::string hand_name(const pfs::Hole& hole) {
-    // Card ids are 4 * rank + suit, and holes are stored low card first.
-    return pfs::card_to_string(hole.second).value() + pfs::card_to_string(hole.first).value();
-}
-
 double weighted_average(std::span<const float> values, std::span<const float> weights) {
     double sum = 0.0;
     double total = 0.0;
@@ -107,12 +97,18 @@ ordered_json node_result(pfs::PostFlopGame& game, const GameFileNode& node) {
 
 }  // namespace
 
-ordered_json build_result(pfs::PostFlopGame& game, const GameFile& file,
-                          const std::string& input_name, const SolveSettings& settings,
-                          const SolveStats& stats) {
-    ordered_json out;
-    out["format"] = "postflop-solver/result";
-    out["version"] = 2;
+double rounded(double value, int decimals) {
+    const double scale = std::pow(10.0, decimals);
+    return std::round(value * scale) / scale;
+}
+
+std::string hand_name(const pfs::Hole& hole) {
+    // Card ids are 4 * rank + suit, and holes are stored low card first.
+    return pfs::card_to_string(hole.second).value() + pfs::card_to_string(hole.first).value();
+}
+
+void add_solve_fields(ordered_json& out, const GameFile& file, const std::string& input_name,
+                      const SolveSettings& settings, const SolveStats& stats) {
     out["input"] = input_name;
     out["source"] = file.source;
     out["start"] = file.start_id;
@@ -134,6 +130,15 @@ ordered_json build_result(pfs::PostFlopGame& game, const GameFile& file,
                     {"exploitabilityPercent", rounded(100.0 * stats.exploitability / pot, 4)},
                     {"seconds", rounded(stats.seconds, 3)},
                     {"memoryMB", rounded(static_cast<double>(stats.memory_bytes) / (1024.0 * 1024.0), 1)}};
+}
+
+ordered_json build_result(pfs::PostFlopGame& game, const GameFile& file,
+                          const std::string& input_name, const SolveSettings& settings,
+                          const SolveStats& stats) {
+    ordered_json out;
+    out["format"] = "postflop-solver/result";
+    out["version"] = 2;
+    add_solve_fields(out, file, input_name, settings, stats);
 
     game.back_to_root();
     game.cache_normalized_weights();

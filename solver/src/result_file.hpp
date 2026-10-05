@@ -42,4 +42,15 @@ nlohmann::ordered_json build_result(pfs::PostFlopGame& game, const GameFile& fil
                                     const std::string& input_name, const SolveSettings& settings,
                                     const SolveStats& stats);
 
+// Adds the fields the result file and the solution file share, "input" to "solve", to out.
+void add_solve_fields(nlohmann::ordered_json& out, const GameFile& file,
+                      const std::string& input_name, const SolveSettings& settings,
+                      const SolveStats& stats);
+
+// The hand with the higher card first, e.g. "AhKh".
+std::string hand_name(const pfs::Hole& hole);
+
+// value rounded to the given number of decimals.
+double rounded(double value, int decimals);
+
 }  // namespace pfs_solver

@@ -1,8 +1,9 @@
-// postflop-solver: solves a game exported by poker-tools exporters
-// and writes the solution as json. See game_file.hpp for the input and
-// result_file.hpp for the output.
+// postflop-solver: solves a game exported by poker-tools exporters and writes the solution as
+// json, and optionally the complete solved tree as a solution file. See game_file.hpp for the
+// input, result_file.hpp for the json and solution_file.hpp for the solution file.
 #include "game_file.hpp"
 #include "result_file.hpp"
+#include "solution_file.hpp"
 
 #include <core/thread_pool.hpp>
 #include <pfs/game.hpp>
@@ -28,10 +29,14 @@ constexpr uint32_t kCheckInterval = 10;
 
 void print_usage() {
     std::fprintf(stderr,
-                 "Usage: postflop-solver <game.json> --output <result.json> [options]\n"
+                 "Usage: postflop-solver <game.json> [--output <result.json>] [--solution <file.pfsol>]\n"
+                 "                       [options]\n"
                  "\n"
-                 "Solves a game exported by poker-tools and writes the solution as json.\n"
-                 "  --output <file>             The result file (required).\n"
+                 "Solves a game exported by poker-tools and writes the solution as json, and the\n"
+                 "complete solved tree as a solution file. At least one output is required.\n"
+                 "  --output <file>             The result file: the first street as json.\n"
+                 "  --solution <file>           The solution file: every street and card\n"
+                 "                              (documentation/SolverFileFormat.md).\n"
                  "  --ranges <file>             Use the ranges of a range file (poker-tools/range)\n"
                  "                              instead of the game file's ranges.\n"
                  "  --iterations <n>            Maximum number of iterations (default: %u).\n"
@@ -39,8 +44,28 @@ void print_usage() {
                  "                              percentage of the starting pot (default: %g).\n"
                  "  --compress                  Store the solver data as 16-bit integers, which\n"
                  "                              halves the memory use.\n"
-                 "  --quiet                     Do not print progress.\n",
+                 "  --quiet                     Do not print progress.\n"
+                 "\n"
+                 "Solution file options:\n"
+                 "  --solution-streets <street> The last street stored: flop, turn or river\n"
+                 "                              (default: river).\n"
+                 "  --solution-precision <p>    u16 (default) or f32, the exact values.\n"
+                 "  --solution-codec <codec>    zlib (default) or none.\n"
+                 "  --solution-prune <percent>  Leave out what follows an action the range takes\n"
+                 "                              less often than this (default: 0, off).\n"
+                 "  --solution-prune-line <percent>\n"
+                 "                              Leave out lines played less often than this, the\n"
+                 "                              product of the frequencies of their actions\n"
+                 "                              (default: 0, off).\n",
                  kDefaultIterations, kDefaultExploitabilityPercent);
+}
+
+bool parse_street(const std::string& text, pfs::BoardState& street) {
+    if (text == "flop") street = pfs::BoardState::Flop;
+    else if (text == "turn") street = pfs::BoardState::Turn;
+    else if (text == "river") street = pfs::BoardState::River;
+    else return false;
+    return true;
 }
 
 bool parse_unsigned(const std::string& text, uint32_t& value) {
@@ -66,15 +91,37 @@ int run(int argc, char* argv[]) {
     std::string input_path;
     std::string output_path;
     std::string ranges_path;
+    std::string solution_path;
     SolveSettings settings;
     settings.max_iterations = kDefaultIterations;
     settings.target_exploitability_percent = kDefaultExploitabilityPercent;
+    SolutionSettings solution_settings;
     bool quiet = false;
 
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg == "--output" && i + 1 < argc) {
             output_path = argv[++i];
+        } else if (arg == "--solution" && i + 1 < argc) {
+            solution_path = argv[++i];
+        } else if (arg == "--solution-streets" && i + 1 < argc) {
+            if (!parse_street(argv[++i], solution_settings.max_street))
+                return fail(std::string("invalid street '") + argv[i] + "' (flop, turn or river)");
+        } else if (arg == "--solution-precision" && i + 1 < argc) {
+            const std::string value = argv[++i];
+            if (value != "u16" && value != "f32")
+                return fail("invalid precision '" + value + "' (u16 or f32)");
+            solution_settings.full_precision = value == "f32";
+        } else if (arg == "--solution-codec" && i + 1 < argc) {
+            const std::string value = argv[++i];
+            if (value != "zlib" && value != "none") return fail("invalid codec '" + value + "' (zlib or none)");
+            solution_settings.codec = value == "zlib" ? solution::Codec::Zlib : solution::Codec::None;
+        } else if (arg == "--solution-prune" && i + 1 < argc) {
+            if (!parse_percent(argv[++i], solution_settings.prune_action_percent))
+                return fail(std::string("invalid frequency '") + argv[i] + "' (a percentage is needed)");
+        } else if (arg == "--solution-prune-line" && i + 1 < argc) {
+            if (!parse_percent(argv[++i], solution_settings.prune_line_percent))
+                return fail(std::string("invalid frequency '") + argv[i] + "' (a percentage is needed)");
         } else if (arg == "--ranges" && i + 1 < argc) {
             ranges_path = argv[++i];
         } else if (arg == "--iterations" && i + 1 < argc) {
@@ -97,7 +144,7 @@ int run(int argc, char* argv[]) {
             return EXIT_FAILURE;
         }
     }
-    if (input_path.empty() || output_path.empty()) {
+    if (input_path.empty() || (output_path.empty() && solution_path.empty())) {
         print_usage();
         return EXIT_FAILURE;
     }
@@ -158,10 +205,37 @@ int run(int argc, char* argv[]) {
         std::printf("%sSolved in %u iterations, %.1f seconds: exploitability %.3f%% of pot\n",
                     iteration > 0 ? "\n" : "", iteration, stats.seconds, 100.0 * exploitability / pot);
 
-    const nlohmann::ordered_json result =
-        build_result(game, file.value(), std::filesystem::path(input_path).filename().string(), settings, stats);
-    std::ofstream stream(output_path, std::ios::binary);
-    if (!stream || !(stream << result.dump(2) << "\n")) return fail("could not write " + output_path);
+    const std::string input_name = std::filesystem::path(input_path).filename().string();
+    if (!output_path.empty()) {
+        const nlohmann::ordered_json result = build_result(game, file.value(), input_name, settings, stats);
+        std::ofstream stream(output_path, std::ios::binary);
+        if (!stream || !(stream << result.dump(2) << "\n")) return fail("could not write " + output_path);
+    }
+
+    if (!solution_path.empty()) {
+        if (!quiet) {
+            solution_settings.progress = [](uint64_t segments) {
+                if (segments % 100 == 0) {
+                    std::printf("\rWriting the solution: %llu segments", static_cast<unsigned long long>(segments));
+                    std::fflush(stdout);
+                }
+            };
+        }
+        const auto solution_start = std::chrono::steady_clock::now();
+        const pfs::Result<SolutionStats> written = write_solution(
+            game, file.value(), input_name, settings, stats, solution_settings, solution_path);
+        if (!written) return fail(written.error());
+        if (!quiet) {
+            const SolutionStats& s = written.value();
+            std::printf("\rWrote %s in %.1f seconds: %.1f MB, %llu segments, %llu nodes, %llu pruned\n",
+                        solution_path.c_str(),
+                        std::chrono::duration<double>(std::chrono::steady_clock::now() - solution_start).count(),
+                        static_cast<double>(s.file_bytes) / (1024.0 * 1024.0),
+                        static_cast<unsigned long long>(s.segments),
+                        static_cast<unsigned long long>(s.stored_nodes),
+                        static_cast<unsigned long long>(s.pruned_nodes + s.pruned_exits));
+        }
+    }
     return EXIT_SUCCESS;
 }
 

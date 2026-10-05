@@ -115,10 +115,12 @@ PFS_RUN_SLOW=1 ./build/tests/pfs_tests
 ## Command line solver
 
 `solver/` builds `postflop-solver`, which solves a game exported in JSON format by tools
-in the separate poker-tools repository and writes the solution as json:
+in the separate poker-tools repository. It writes the first street as json, the complete
+solved tree as a solution file, or both:
 
 ```sh
-postflop-solver game.json --output result.json [--ranges ranges.json] [--iterations 1000] [--exploitability 0.25] [--compress] [--quiet]
+postflop-solver game.json [--output result.json] [--solution result.pfsol] [--ranges ranges.json]
+                [--iterations 1000] [--exploitability 0.25] [--compress] [--quiet]
 ```
 
 `--ranges` solves the game tree with the ranges of a range file (`poker-tools/range`,
@@ -129,8 +131,28 @@ ranges. It warns when the range file's stack-to-pot ratio differs from the game'
 stores the solver data as 16-bit integers. The input format is described in
 `solver/src/game_file.hpp` and the output format in `solver/src/result_file.hpp`. The
 result has the strategy, EVs and equity per hand for every node of the first street.
-nlohmann/json, which it uses for parsing, is included in `third-party/nlohmann` (MIT).
-It is built when this is the top-level project (`PFS_BUILD_SOLVER`).
+
+`--solution` writes every street and every dealt card to a binary file, specified in
+[documentation/SolverFileFormat.md](documentation/SolverFileFormat.md). It is meant for
+other applications to browse. A reader loads one node at a time with file seeks or HTTP
+range requests, so the file never has to fit in memory. Options:
+
+| Option | Default | Meaning |
+|---|---|---|
+| `--solution-streets flop\|turn\|river` | `river` | The last street stored |
+| `--solution-precision u16\|f32` | `u16` | 16-bit values, or the exact 32-bit floats |
+| `--solution-codec zlib\|none` | `zlib` | Compression of each node |
+| `--solution-prune <percent>` | 0 (off) | Leave out what follows an action the range takes less often than this |
+| `--solution-prune-line <percent>` | 0 (off) | Leave out lines played less often than this |
+
+For the example game `simulations/input/KcQdJs_basic_game.json` (132 and 103 combos, 52,684
+nodes), the solution file is 60 MB and takes 4 seconds to write. It is 46 MB with
+`--solution-prune-line 1`, 25 MB with `--solution-prune-line 5`, and 1.4 MB with
+`--solution-streets turn`. `solver/src/solution_reader.hpp` is a C++ reader.
+
+nlohmann/json, which it uses for parsing, is included in `third-party/nlohmann` (MIT), and
+miniz, which compresses the solution file, in `third-party/miniz` (MIT). It is built when
+this is the top-level project (`PFS_BUILD_SOLVER`).
 
 ## Implementation notes
 

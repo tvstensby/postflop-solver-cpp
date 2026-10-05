@@ -44,7 +44,8 @@ cmake --build build
 ctest --test-dir build -LE slow --output-on-failure
 ```
 
-- `ctest -LE slow` runs the unit suite (`pfs_tests`) in about 8 seconds. Without `-LE slow` the
+- `ctest -LE slow` runs the unit suite (`pfs_tests`) and the solver application's tests
+  (`postflop_solver_tests`) in about 11 seconds. Without `-LE slow` the
   three examples also run as tests, and each can take up to 30 minutes.
 - `PFS_RUN_SLOW=1` enables the long-running unit cases (exhaustive 7-card evaluation, the
   PioSOLVER presets).
@@ -66,8 +67,14 @@ build-vscode/solver/Release/postflop-solver.exe game.json --output result.json
   (`poker-tools/game`) and range file (`poker-tools/range`, used with `--ranges`), both described
   in `solver/src/game_file.hpp`, and the result described in `solver/src/result_file.hpp`.
   When either format changes, update the other repository's reader or writer too and bump the format version.
+- `--solution <file.pfsol>` writes the complete solved tree, every street and card, as a binary
+  file that is read one node at a time (`documentation/SolverFileFormat.md`,
+  `solver/src/solution_file.hpp`, reader in `solver/src/solution_reader.hpp`). When the format
+  changes, update the specification and bump its version.
 - Both repositories build on their own. `third-party/nlohmann` is a copy of the one in
   `../poker-tools/third-party/nlohmann`. Keep the copies at the same version.
+  `third-party/miniz` (MIT, release 3.1.2) compresses the solution file and is only in this
+  repository.
 - Amounts in both files are integers: GTO+ chips times `chipScale`.
 
 ## Rules that keep results correct
