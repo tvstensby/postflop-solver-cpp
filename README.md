@@ -125,7 +125,20 @@ postflop-solver game.json [--output result.json] [--solution result.pfsol] [--ra
 
 `--ranges` solves the game tree with the ranges of a range file (`poker-tools/range`,
 e.g. preflop ranges exported by poker-tools' hrc-analyzer) instead of the game file's
-ranges. It warns when the range file's stack-to-pot ratio differs from the game's.
+ranges. It warns when the range file's stack-to-pot ratio differs from the game's, if the
+range file has the stacks and pot.
+
+Instead of a game file, a game can be put together from two files and a board: a game tree
+file (`poker-tools/tree`, written by poker-tools' game-tree-builder) and a range file. The
+board is given on the command line, as the flop and, if the tree starts on the turn or
+river, those cards: `KcQdJs`, `KcQdJsTh` or `KcQdJsTh2c`.
+
+```sh
+postflop-solver --tree tree.json --ranges ranges.json --board KcQdJs [--output result.json] [--solution result.pfsol]
+```
+
+The result and solution files then have an empty `source` and `start`, and `input` is the
+tree file.
 
 `--exploitability` is the target as a percentage of the starting pot, and `--compress`
 stores the solver data as 16-bit integers. The input format is described in

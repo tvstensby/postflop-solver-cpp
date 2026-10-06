@@ -65,6 +65,50 @@ Result<Action> parse_action(const std::string& text) {
     return Result<Action>::err("Invalid action: " + text);
 }
 
+namespace {
+
+// The parts that game files and tree files have in common: chipScale, treeConfig, addLines,
+// removeLines and nodes.
+pfs::Status read_tree_parts(const json& data, GameFile& file) {
+    file.chip_scale = data.at("chipScale").get<double>();
+
+    const json& config = data.at("treeConfig");
+    Result<pfs::BoardState> state = parse_board_state(config.at("initialState").get<std::string>());
+    if (!state) return pfs::Status::err(state.error());
+    file.tree_config.initial_state = state.value();
+    file.tree_config.starting_pot = config.at("startingPot").get<int32_t>();
+    file.tree_config.effective_stack = config.at("effectiveStack").get<int32_t>();
+    file.tree_config.rake_rate = config.at("rakeRate").get<double>();
+    file.tree_config.rake_cap = config.at("rakeCap").get<double>();
+
+    for (const json& line : data.at("addLines")) {
+        Result<std::vector<Action>> actions = parse_line(line);
+        if (!actions) return pfs::Status::err(actions.error());
+        file.add_lines.push_back(actions.value());
+    }
+    for (const json& line : data.at("removeLines")) {
+        Result<std::vector<Action>> actions = parse_line(line);
+        if (!actions) return pfs::Status::err(actions.error());
+        file.remove_lines.push_back(actions.value());
+    }
+
+    for (const json& item : data.at("nodes")) {
+        GameFileNode node;
+        node.id = item.at("id").get<std::string>();
+        node.street = item.at("street").get<std::string>();
+        node.player = item.at("player").get<std::string>() == "OOP" ? 0 : 1;
+        node.pot = item.at("pot").get<int64_t>();
+        Result<std::vector<Action>> history = parse_line(item.at("history"));
+        if (!history) return pfs::Status::err(history.error());
+        node.history = history.value();
+        node.actions = item.at("actions").get<std::vector<std::string>>();
+        file.nodes.push_back(std::move(node));
+    }
+    return pfs::Status::ok();
+}
+
+}  // namespace
+
 Result<GameFile> read_game_file(const std::filesystem::path& path) {
     std::ifstream stream(path, std::ios::binary);
     if (!stream) return Result<GameFile>::err("Could not open " + path.string());
@@ -84,49 +128,63 @@ Result<GameFile> read_game_file(const std::filesystem::path& path) {
         file.gto_ranges = version >= 2;
         file.source = data.value("source", "");
         file.start_id = data.at("start").at("id").get<std::string>();
-        file.chip_scale = data.at("chipScale").get<double>();
         file.flop = data.at("board").at("flop").get<std::string>();
         file.turn = optional_card(data.at("board").at("turn"));
         file.river = optional_card(data.at("board").at("river"));
         file.ranges[0] = data.at("ranges").at("OOP").get<std::string>();
         file.ranges[1] = data.at("ranges").at("IP").get<std::string>();
 
-        const json& config = data.at("treeConfig");
-        Result<pfs::BoardState> state = parse_board_state(config.at("initialState").get<std::string>());
-        if (!state) return Result<GameFile>::err(state.error());
-        file.tree_config.initial_state = state.value();
-        file.tree_config.starting_pot = config.at("startingPot").get<int32_t>();
-        file.tree_config.effective_stack = config.at("effectiveStack").get<int32_t>();
-        file.tree_config.rake_rate = config.at("rakeRate").get<double>();
-        file.tree_config.rake_cap = config.at("rakeCap").get<double>();
-
-        for (const json& line : data.at("addLines")) {
-            Result<std::vector<Action>> actions = parse_line(line);
-            if (!actions) return Result<GameFile>::err(actions.error());
-            file.add_lines.push_back(actions.value());
-        }
-        for (const json& line : data.at("removeLines")) {
-            Result<std::vector<Action>> actions = parse_line(line);
-            if (!actions) return Result<GameFile>::err(actions.error());
-            file.remove_lines.push_back(actions.value());
-        }
-
-        for (const json& item : data.at("nodes")) {
-            GameFileNode node;
-            node.id = item.at("id").get<std::string>();
-            node.street = item.at("street").get<std::string>();
-            node.player = item.at("player").get<std::string>() == "OOP" ? 0 : 1;
-            node.pot = item.at("pot").get<int64_t>();
-            Result<std::vector<Action>> history = parse_line(item.at("history"));
-            if (!history) return Result<GameFile>::err(history.error());
-            node.history = history.value();
-            node.actions = item.at("actions").get<std::vector<std::string>>();
-            file.nodes.push_back(std::move(node));
-        }
+        pfs::Status tree = read_tree_parts(data, file);
+        if (!tree) return Result<GameFile>::err(tree.error());
         return file;
     } catch (const json::exception& e) {
         return Result<GameFile>::err("Invalid game file " + path.string() + ": " + e.what());
     }
+}
+
+Result<GameFile> read_tree_file(const std::filesystem::path& path) {
+    std::ifstream stream(path, std::ios::binary);
+    if (!stream) return Result<GameFile>::err("Could not open " + path.string());
+
+    try {
+        const json data = json::parse(stream);
+        if (data.value("format", "") != "poker-tools/tree")
+            return Result<GameFile>::err(path.string() + " is not a poker-tools game tree file");
+        if (data.value("version", 0) != 1)
+            return Result<GameFile>::err("Unsupported game tree file version " +
+                                         std::to_string(data.value("version", 0)));
+
+        GameFile file;
+        file.version = 2;
+        file.gto_ranges = true;
+        pfs::Status tree = read_tree_parts(data, file);
+        if (!tree) return Result<GameFile>::err(tree.error());
+        return file;
+    } catch (const json::exception& e) {
+        return Result<GameFile>::err("Invalid game tree file " + path.string() + ": " + e.what());
+    }
+}
+
+pfs::Status set_board(GameFile& file, const std::string& board) {
+    // Three, four or five cards, e.g. "KcQdJs" or "KcQdJsTh2c".
+    if (board.size() != 6 && board.size() != 8 && board.size() != 10)
+        return pfs::Status::err("Invalid board '" + board +
+                                "': the flop, optionally followed by the turn and the river, is needed "
+                                "(for example KcQdJs, KcQdJsTh or KcQdJsTh2c)");
+    const size_t cards = board.size() / 2;
+    const pfs::BoardState state = file.tree_config.initial_state;
+    const size_t expected = state == pfs::BoardState::Flop ? 3 : state == pfs::BoardState::Turn ? 4 : 5;
+    if (cards != expected)
+        return pfs::Status::err("The tree starts on the " +
+                                std::string(state == pfs::BoardState::Flop   ? "flop"
+                                            : state == pfs::BoardState::Turn ? "turn"
+                                                                             : "river") +
+                                ", so the board needs " + std::to_string(expected) + " cards, not " +
+                                std::to_string(cards));
+    file.flop = board.substr(0, 6);
+    file.turn = cards >= 4 ? board.substr(6, 2) : std::string();
+    file.river = cards >= 5 ? board.substr(8, 2) : std::string();
+    return pfs::Status::ok();
 }
 
 pfs::Status read_range_file(GameFile& file, const std::filesystem::path& path, std::string& warning) {
@@ -150,14 +208,15 @@ pfs::Status read_range_file(GameFile& file, const std::filesystem::path& path, s
         file.ranges_source = path.filename().string();
 
         // The pot and stacks are in the range file's own units, so compare the
-        // stack-to-pot ratios.
+        // stack-to-pot ratios. Range files written by hand may not have them.
+        warning.clear();
+        if (!data.contains("pot") || !data.contains("stacks")) return pfs::Status::ok();
         const double pot = data.at("pot").get<double>();
         const double stack = std::min(data.at("stacks").at("OOP").get<double>(),
                                       data.at("stacks").at("IP").get<double>());
         const double game_spr = static_cast<double>(file.tree_config.effective_stack) /
                                 static_cast<double>(file.tree_config.starting_pot);
         const double spr = pot > 0.0 ? stack / pot : 0.0;
-        warning.clear();
         if (std::abs(spr - game_spr) > 0.01 * game_spr) {
             char text[160];
             std::snprintf(text, sizeof(text),

@@ -51,6 +51,7 @@ if(PFS_BUILD_TESTS)
   add_executable(postflop_solver_tests
     ${PFS_SOLVER_SOURCES}
     ${PROJECT_SOURCE_DIR}/tests/harness.cpp
+    tests/test_game_file.cpp
     tests/test_solution_file.cpp
   )
   pfs_solver_target(postflop_solver_tests)

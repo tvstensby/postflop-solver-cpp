@@ -1,5 +1,8 @@
 // Reads the game files written by poker-tools exporters and builds the corresponding game.
-// Format: "poker-tools/game" versions 1 and 2
+// Format: "poker-tools/game" versions 1 and 2. A game can also be put together from a game tree
+// file ("poker-tools/tree" version 1, written by poker-tools' game-tree-builder), a range file
+// (see read_range_file) and a board given on the command line. The tree file has the same tree
+// parts as a game file, but no board, ranges, source or start node.
 //
 // The file describes the game in this library's own terms:
 //   - treeConfig: initial state, starting pot, effective stack and rake. The tree
@@ -52,10 +55,19 @@ struct GameFile {
 
 pfs::Result<GameFile> read_game_file(const std::filesystem::path& path);
 
+// Reads a game tree file. The game has no board and ranges yet: set_board and read_range_file
+// give it those.
+pfs::Result<GameFile> read_tree_file(const std::filesystem::path& path);
+
+// Sets the board from the flop, optionally followed by the turn and the river ("KcQdJs",
+// "KcQdJsTh", "KcQdJsTh2c"). The number of cards must match the street the tree starts on. The
+// cards themselves are checked when the card configuration is built.
+pfs::Status set_board(GameFile& file, const std::string& board);
+
 // Replaces the game's ranges with those of a range file ("poker-tools/range" versions 1 and 2, written
 // by poker-tools' hrc-analyzer --export-range), so one game tree can be solved with different
-// ranges. The file has OOP and IP ranges in GTO+ syntax, the players' stacks and the pot (in its
-// own chip units). Sets warning if its stack-to-pot ratio differs from the game's.
+// ranges. The file has OOP and IP ranges in GTO+ syntax, and optionally the players' stacks and
+// the pot (in its own chip units). Sets warning if its stack-to-pot ratio differs from the game's.
 pfs::Status read_range_file(GameFile& file, const std::filesystem::path& path, std::string& warning);
 
 // Builds the action tree and checks every node of the file against it.

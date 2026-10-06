@@ -64,7 +64,8 @@ build-vscode/solver/Release/postflop-solver.exe game.json --output result.json
 ```
 
 - The two repositories exchange data only through files, mostly json: the input game file
-  (`poker-tools/game`) and range file (`poker-tools/range`, used with `--ranges`), both described
+  (`poker-tools/game`), game tree file (`poker-tools/tree`, used with `--tree` and `--board`
+  instead of a game file) and range file (`poker-tools/range`, used with `--ranges`), described
   in `solver/src/game_file.hpp`, and the result described in `solver/src/result_file.hpp`.
   When either format changes, update the other repository's reader or writer too and bump the format version.
 - `--solution <file.pfsol>` writes the complete solved tree, every street and card, as a binary

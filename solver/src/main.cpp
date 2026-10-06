@@ -31,14 +31,23 @@ void print_usage() {
     std::fprintf(stderr,
                  "Usage: postflop-solver <game.json> [--output <result.json>] [--solution <file.pfsol>]\n"
                  "                       [options]\n"
+                 "       postflop-solver --tree <tree.json> --ranges <ranges.json> --board <cards>\n"
+                 "                       [--output <result.json>] [--solution <file.pfsol>] [options]\n"
                  "\n"
-                 "Solves a game exported by poker-tools and writes the solution as json, and the\n"
-                 "complete solved tree as a solution file. At least one output is required.\n"
+                 "Solves a game and writes the solution as json, and the complete solved tree as a\n"
+                 "solution file. At least one output is required. The game is either a game file\n"
+                 "exported by poker-tools (poker-tools/game), or put together from a game tree file\n"
+                 "(poker-tools/tree), a range file (poker-tools/range) and a board.\n"
+                 "  --tree <file>               The game tree file, instead of a game file.\n"
+                 "  --board <cards>             The board with the game tree: the flop, and the turn\n"
+                 "                              and river if the tree starts on them, for example\n"
+                 "                              KcQdJs, KcQdJsTh or KcQdJsTh2c.\n"
                  "  --output <file>             The result file: the first street as json.\n"
                  "  --solution <file>           The solution file: every street and card\n"
                  "                              (documentation/SolverFileFormat.md).\n"
-                 "  --ranges <file>             Use the ranges of a range file (poker-tools/range)\n"
-                 "                              instead of the game file's ranges.\n"
+                 "  --ranges <file>             The ranges of a range file (poker-tools/range). With\n"
+                 "                              a game file they replace the file's ranges, with a\n"
+                 "                              game tree file they are required.\n"
                  "  --iterations <n>            Maximum number of iterations (default: %u).\n"
                  "  --exploitability <percent>  Stop when the exploitability is at most this\n"
                  "                              percentage of the starting pot (default: %g).\n"
@@ -88,7 +97,9 @@ int fail(const std::string& message) {
 }
 
 int run(int argc, char* argv[]) {
-    std::string input_path;
+    std::string input_path;  // the game file, or the game tree file with --tree
+    std::string tree_path;
+    std::string board;
     std::string output_path;
     std::string ranges_path;
     std::string solution_path;
@@ -102,6 +113,10 @@ int run(int argc, char* argv[]) {
         const std::string arg = argv[i];
         if (arg == "--output" && i + 1 < argc) {
             output_path = argv[++i];
+        } else if (arg == "--tree" && i + 1 < argc) {
+            tree_path = argv[++i];
+        } else if (arg == "--board" && i + 1 < argc) {
+            board = argv[++i];
         } else if (arg == "--solution" && i + 1 < argc) {
             solution_path = argv[++i];
         } else if (arg == "--solution-streets" && i + 1 < argc) {
@@ -144,13 +159,30 @@ int run(int argc, char* argv[]) {
             return EXIT_FAILURE;
         }
     }
-    if (input_path.empty() || (output_path.empty() && solution_path.empty())) {
+    if (output_path.empty() && solution_path.empty()) {
         print_usage();
         return EXIT_FAILURE;
     }
+    const bool from_tree = !tree_path.empty();
+    if (from_tree) {
+        if (!input_path.empty()) return fail("a game file cannot be combined with --tree");
+        if (ranges_path.empty()) return fail("--tree needs the ranges of a range file (--ranges)");
+        if (board.empty()) return fail("--tree needs the board (--board), for example KcQdJs");
+        input_path = tree_path;
+    } else {
+        if (input_path.empty()) {
+            print_usage();
+            return EXIT_FAILURE;
+        }
+        if (!board.empty()) return fail("--board is only used with --tree, a game file has its board");
+    }
 
-    pfs::Result<GameFile> file = read_game_file(input_path);
+    pfs::Result<GameFile> file = from_tree ? read_tree_file(input_path) : read_game_file(input_path);
     if (!file) return fail(file.error());
+    if (from_tree) {
+        const pfs::Status status = set_board(file.value(), board);
+        if (!status) return fail(status.error());
+    }
     if (!ranges_path.empty()) {
         std::string warning;
         pfs::Status status = read_range_file(file.value(), ranges_path, warning);
@@ -171,11 +203,14 @@ int run(int argc, char* argv[]) {
     const std::pair<uint64_t, uint64_t> memory = game.memory_usage();
     stats.memory_bytes = settings.compression ? memory.second : memory.first;
     const double pot = file.value().tree_config.starting_pot;
-    if (!quiet)
-        std::printf("Solving %s from %s: %zu OOP and %zu IP hands, %.1f MB, %u threads\n",
-                    input_path.c_str(), file.value().start_id.c_str(), game.num_private_hands(0),
+    if (!quiet) {
+        const std::string board_text = file.value().flop + file.value().turn + file.value().river;
+        std::printf("Solving %s on %s%s%s: %zu OOP and %zu IP hands, %.1f MB, %u threads\n",
+                    input_path.c_str(), board_text.c_str(), from_tree ? "" : " from ",
+                    from_tree ? "" : file.value().start_id.c_str(), game.num_private_hands(0),
                     game.num_private_hands(1), static_cast<double>(stats.memory_bytes) / (1024.0 * 1024.0),
                     stats.threads);
+    }
 
     const auto start = std::chrono::steady_clock::now();
     game.allocate_memory(settings.compression);
