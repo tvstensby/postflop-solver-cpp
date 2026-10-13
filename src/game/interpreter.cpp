@@ -594,10 +594,17 @@ std::vector<float> PostFlopGame::expected_values_detail(size_t player) const {
     const int32_t starting_pot = tree_config_.starting_pot;
     const int32_t bias = std::max(total_bet_amount_[player] - total_bet_amount_[player ^ 1], 0);
 
+    // Reporting a fold as 0 is not only a convention: without a risk premium the fold row's
+    // cfvalue is exactly -half_pot, which the add-back below cancels to the bias, and the bias is
+    // 0 for a player who can fold. With a premium the row is -extra * node.amount(), the premium
+    // on the chips already committed, and zeroing it would hide the very thing being modelled and
+    // make these EVs disagree with what the solver optimized.
+    const bool zero_folds = risk_loss_extra(player) == 0.0;
+
     const size_t num_rows = num_hands == 0 ? 0 : ret.size() / num_hands;
     for (size_t action = 0; action < num_rows; ++action) {
-        const bool is_fold =
-            have_actions && node.play(action).prev_action().kind == ActionKind::Fold;
+        const bool is_fold = zero_folds && have_actions &&
+                             node.play(action).prev_action().kind == ActionKind::Fold;
         std::span<float> r = row_mut(std::span<float>(ret), action, num_hands);
         apply_swap_to(r, player, false);
         for (size_t i = 0; i < num_hands; ++i) {

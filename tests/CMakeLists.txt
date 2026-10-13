@@ -9,6 +9,7 @@ set(PFS_TEST_SOURCES
   test_leduc.cpp
   test_card_config.cpp
   test_game.cpp
+  test_risk_premium.cpp
   test_bunching.cpp
   test_bunching_game.cpp
   test_pio_regression.cpp

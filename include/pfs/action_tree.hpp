@@ -83,6 +83,11 @@ struct TreeConfig {
     int32_t effective_stack = 0;  // must be > 0
     double rake_rate = 0.0;       // in [0, 1]
     double rake_cap = 0.0;        // >= 0
+    // ICM risk premium per player, [OOP, IP], as a fraction in [0, 0.5). It is the extra equity
+    // the player needs before stacking off: 0.02 means 52% instead of 50% for an all-in for
+    // stacks. The payoffs weight the player's losses by the bubble factor
+    // (1 + 2 * premium) / (1 - 2 * premium), which makes the game non-zero-sum. 0 is chip EV.
+    std::array<double, 2> risk_premium{};
     std::array<BetSizeOptions, 2> flop_bet_sizes;   // [OOP, IP]
     std::array<BetSizeOptions, 2> turn_bet_sizes;
     std::array<BetSizeOptions, 2> river_bet_sizes;

@@ -1,6 +1,7 @@
 # Solution file format
 
-Format id `postflop-solver/solution`, version 1.0, extension `.pfsol`. `postflop-solver --solution`
+Format id `postflop-solver/solution`, version 1.1, extension `.pfsol`. 1.1 added the risk-premium
+metadata keys, which a 1.0 reader ignores. `postflop-solver --solution`
 writes it (`solver/src/solution_file.hpp`), and `solver/src/solution_reader.hpp` is a C++ reader.
 The writer does not use zstd or the byte-shuffle filter, and it does not write NormalizedWeight
 fields. All three are part of the format, and readers should support them.
@@ -184,8 +185,8 @@ entirely. It reuses the field names of the game and result files where they mean
   "chipScale": 1000.0,
   "board": { "flop": "KcQdJs", "turn": null, "river": null },
   "ranges": { "OOP": "AA-22,AKs-ATs,...", "IP": "JJ-55,AQs-AJs,..." },
-  "treeConfig": { "initialState": "flop", "startingPot": 7500, "effectiveStack": 18000,
-                  "rakeRate": 0.0, "rakeCap": 0.0 },
+  "riskPremiumPercent": { "OOP": 0.0, "IP": 0.0 },
+  "bubbleFactor": { "OOP": 1.0, "IP": 1.0 },
   "settings": { "maxIterations": 1000, "targetExploitabilityPercent": 0.25,
                 "compression": false, "threads": 8 },
   "solve": { "iterations": 80, "exploitability": 16.989, "exploitabilityPercent": 0.2265,
@@ -212,6 +213,9 @@ entirely. It reuses the field names of the game and result files where they mean
 }
 ```
 
+- `riskPremiumPercent` and `bubbleFactor`: the players' ICM risk premiums and the loss weights
+  they correspond to. Always present. Anything other than 0 and 1 means the EV fields below are
+  risk-adjusted rather than chips: they do not sum to the pot, and a fold is not worth 0.
 - `storedStreets`: the streets whose segments are in the file. If the river is missing, every
   river chance entry is `NotStored`.
 - `pruning`: the thresholds the writer pruned with (§7), or `null` if the tree is not pruned. A
@@ -421,8 +425,9 @@ Terminal nodes have none.
 - A reader ignores field ids it does not know. New fields are minor-version changes.
 - Values for hands with weight 0 are written as 0 and have no meaning. Non-finite values are
   written as 0.
-- EV conventions (fold actions are 0, pot bias included) are the interpreter's, the same as
-  `evs` in the result file.
+- EV conventions (pot bias included) are the interpreter's, the same as `evs` in the result file.
+  A fold is 0 unless the player has a risk premium, in which case it carries the premium on the
+  chips they had already committed and is negative.
 
 ### Encodings
 

@@ -434,6 +434,27 @@ Status ActionTree::check_config(const TreeConfig& c) {
                            std::to_string(c.rake_rate));
     if (c.rake_cap < 0.0)
         return Status::err("Rake cap must be non-negative: " + std::to_string(c.rake_cap));
+    // Spelled as a rejection of the complement so that a NaN premium is caught here rather than
+    // poisoning every terminal value.
+    for (size_t player = 0; player < 2; ++player) {
+        const double premium = c.risk_premium[player];
+        if (!(premium >= 0.0 && premium < 0.5))
+            return Status::err(std::string("Risk premium of ") + (player == 0 ? "OOP" : "IP") +
+                               " must be in [0, 0.5): " + std::to_string(premium));
+    }
+    // The risk premium weights a player's losing outcomes, which assumes that losing is the only
+    // outcome worth less than the player's stack at the start of the hand. A rake above the
+    // starting pot breaks that: it can make a chopped pot, or even a won pot, a net loss.
+    if ((c.risk_premium[0] != 0.0 || c.risk_premium[1] != 0.0) && c.rake_rate > 0.0 &&
+        c.rake_cap > 0.0) {
+        const double max_pot =
+            static_cast<double>(c.starting_pot) + 2.0 * static_cast<double>(c.effective_stack);
+        const double max_rake = std::min(max_pot * c.rake_rate, c.rake_cap);
+        if (max_rake > static_cast<double>(c.starting_pot))
+            return Status::err("A risk premium needs a rake that cannot exceed the starting pot, "
+                               "but the rake reaches " + std::to_string(max_rake) +
+                               " and the starting pot is " + std::to_string(c.starting_pot));
+    }
     if (c.add_allin_threshold < 0.0)
         return Status::err("Add all-in threshold must be non-negative: " +
                            std::to_string(c.add_allin_threshold));

@@ -2,6 +2,7 @@
 
 #include <pfs/action_tree.hpp>
 
+#include <cmath>
 #include <string>
 #include <vector>
 
@@ -105,6 +106,34 @@ PFS_TEST(action_tree, config_validation) {
     CHECK(bad([](TreeConfig& x) { x.add_allin_threshold = -1.0; }));
     CHECK(bad([](TreeConfig& x) { x.force_allin_threshold = -1.0; }));
     CHECK(bad([](TreeConfig& x) { x.merging_threshold = -1.0; }));
+    // A risk premium is an equity share, so 0.5 would make the bubble factor infinite. The NaN
+    // case matters because it would otherwise poison every terminal value without a diagnostic.
+    CHECK(bad([](TreeConfig& x) { x.risk_premium[0] = -0.01; }));
+    CHECK(bad([](TreeConfig& x) { x.risk_premium[1] = -0.01; }));
+    CHECK(bad([](TreeConfig& x) { x.risk_premium[0] = 0.5; }));
+    CHECK(bad([](TreeConfig& x) { x.risk_premium[1] = 1.5; }));
+    CHECK(bad([](TreeConfig& x) { x.risk_premium[0] = std::nan(""); }));
+    CHECK(ActionTree::create([] {
+              TreeConfig x = check_only_config();
+              x.risk_premium = {0.0, 0.499};
+              return x;
+          }()).is_ok());
+
+    // The premium weights the losing outcome, which assumes losing is the only way to end below
+    // the stack the hand started with. A rake above the starting pot would break that.
+    CHECK(bad([](TreeConfig& x) {
+        x.risk_premium[0] = 0.1;
+        x.rake_rate = 0.5;
+        x.rake_cap = 1e9;
+    }));
+    // A rake that stays under the starting pot is fine alongside a premium.
+    CHECK(ActionTree::create([] {
+              TreeConfig x = check_only_config();
+              x.risk_premium[0] = 0.1;
+              x.rake_rate = 0.05;
+              x.rake_cap = 10.0;
+              return x;
+          }()).is_ok());
 }
 
 // These are the two action-list assertions from examples/basic.rs, and they

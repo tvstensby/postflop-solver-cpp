@@ -478,7 +478,9 @@ void PostFlopGame::evaluate_internal_bunching(std::span<float> result, const Pos
     const double half_pot = 0.5 * pot;
     const double rake = fmin_raw(pot * tree_config_.rake_rate, tree_config_.rake_cap);
     const float amount_win = static_cast<float>((half_pot - rake) / bunching_num_combinations_);
-    const float amount_lose = static_cast<float>(-half_pot / bunching_num_combinations_);
+    // See evaluate_internal: the risk premium weights the losing outcome only.
+    const float amount_lose = static_cast<float>(
+        -(half_pot + risk_loss_extra(player) * node.amount()) / bunching_num_combinations_);
     const float amount_tie = static_cast<float>(-0.5 * rake / bunching_num_combinations_);
     const size_t opponent_len = private_cards_[player ^ 1].size();
 

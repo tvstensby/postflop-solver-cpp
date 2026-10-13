@@ -223,6 +223,59 @@ PFS_TEST(file_io, save_and_load_actual_file) {
     std::remove(path.c_str());
 }
 
+// Loading regenerates the counterfactual values from the saved strategy, which re-runs the
+// terminal evaluation. A risk premium that did not survive the round trip would therefore come
+// back as a chip-EV reading of a risk-averse strategy -- wrong, but plausible-looking.
+PFS_TEST(file_io, round_trip_preserves_risk_premium) {
+    CardConfig cc;
+    cc.range[0] = Range::ones();
+    cc.range[1] = Range::ones();
+    cc.flop = flop_from_str("Td9d6h").value();
+
+    TreeConfig tc;
+    tc.starting_pot = 60;
+    tc.effective_stack = 970;
+    tc.flop_bet_sizes = {BetSizeOptions::parse("50%", "").value(), BetSizeOptions{}};
+    tc.turn_bet_sizes = {BetSizeOptions::parse("50%", "").value(), BetSizeOptions{}};
+    tc.risk_premium = {0.04, 0.11};
+
+    Result<ActionTree> tree = ActionTree::create(std::move(tc));
+    CHECK(tree.is_ok());
+    if (!tree.is_ok()) return;
+    Result<std::unique_ptr<PostFlopGame>> built =
+        PostFlopGame::with_config(std::move(cc), std::move(tree.value()));
+    CHECK(built.is_ok());
+    if (!built.is_ok()) return;
+    PostFlopGame& game = *built.value();
+
+    game.allocate_memory(false);
+    finalize(game);
+    CHECK(game.has_risk_premium());
+    CHECK(!game.is_zero_sum());
+    const Averages before = measure(game);
+
+    Result<std::vector<std::byte>> bytes = save_game_to_bytes(game, "premium");
+    CHECK(bytes.is_ok());
+    if (!bytes.is_ok()) return;
+    Result<LoadedGame> loaded = load_game_from_bytes(bytes.value().data(), bytes.value().size());
+    CHECK(loaded.is_ok());
+    if (!loaded.is_ok()) {
+        ::pfs::test::report_failure(__FILE__, __LINE__, loaded.error());
+        return;
+    }
+    PostFlopGame& reloaded = *loaded.value().game;
+    CHECK_NEAR(reloaded.tree_config().risk_premium[0], 0.04, 0.0);
+    CHECK_NEAR(reloaded.tree_config().risk_premium[1], 0.11, 0.0);
+    CHECK(!reloaded.is_zero_sum());
+
+    const Averages after = measure(reloaded);
+    CHECK_NEAR(after.ev_oop, before.ev_oop, 1e-4);
+    CHECK_NEAR(after.ev_ip, before.ev_ip, 1e-4);
+    // The premium costs both players, so these are below the 45 / 15 of the chip-EV solve.
+    CHECK(before.ev_oop < 45.0f);
+    CHECK(before.ev_ip < 15.0f);
+}
+
 PFS_TEST(file_io, round_trip_preserves_node_locking) {
     CardConfig cc;
     cc.range[0] = Range::parse("AsAh,QsQh").value();

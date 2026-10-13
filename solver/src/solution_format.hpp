@@ -15,7 +15,8 @@ namespace pfs_solver::solution {
 // §3: header.
 inline constexpr std::array<uint8_t, 8> kMagic{0x89, 'P', 'F', 'S', 'O', 'L', '\r', '\n'};
 inline constexpr uint16_t kVersionMajor = 1;
-inline constexpr uint16_t kVersionMinor = 0;
+// 1.1 added riskPremiumPercent and bubbleFactor to the metadata, which older readers ignore.
+inline constexpr uint16_t kVersionMinor = 1;
 inline constexpr uint32_t kFlagCrc = 1;
 inline constexpr size_t kHeaderSize = 72;
 

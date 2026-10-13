@@ -77,6 +77,10 @@ build-vscode/solver/Release/postflop-solver.exe game.json --output result.json
   `third-party/miniz` (MIT, release 3.1.2) compresses the solution file and is only in this
   repository.
 - Amounts in both files are integers: GTO+ chips times `chipScale`.
+- `--risk-premium <oop> <ip>` solves with an ICM risk premium per player instead of chip EV
+  (`README.md`, "Risk premium"). The game and range files may carry `riskPremiumPercent`, since
+  the premium belongs with the ranges it was solved under. A premium makes the game non-zero-sum,
+  so the EVs are risk-adjusted and do not sum to the pot.
 
 ## Rules that keep results correct
 

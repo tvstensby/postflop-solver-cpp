@@ -1,5 +1,5 @@
 // Reads the game files written by poker-tools exporters and builds the corresponding game.
-// Format: "poker-tools/game" versions 1 and 2. A game can also be put together from a game tree
+// Format: "poker-tools/game" versions 1 to 3. A game can also be put together from a game tree
 // file ("poker-tools/tree" version 1, written by poker-tools' game-tree-builder), a range file
 // (see read_range_file) and a board given on the command line. The tree file has the same tree
 // parts as a game file, but no board, ranges, source or start node.
@@ -14,6 +14,10 @@
 //     syntax in version 1.
 //   - nodes: every action node with its history, actions and pot, used to check
 //     that the tree was rebuilt as intended.
+//   - riskPremiumPercent: optional, { "OOP": percent, "IP": percent }, the ICM risk premiums
+//     the ranges were solved under (see README.md, "Risk premium"). It sits alongside the
+//     ranges rather than in treeConfig, and a range file's premiums replace a game file's just
+//     as its ranges do. Absent means chip EV. The command line overrides both.
 // All amounts are integers: GTO+ chips times chipScale.
 #pragma once
 
@@ -47,6 +51,9 @@ struct GameFile {
     std::array<std::string, 2> ranges;  // [OOP, IP]
     bool gto_ranges = false;            // ranges in GTO+ syntax, else Range::parse syntax
     std::string ranges_source;          // the range file the ranges were read from, if any
+    // [OOP, IP] ICM risk premiums, as percentages. TreeConfig stores them as fractions, so
+    // apply_risk_premium does the conversion.
+    std::array<double, 2> risk_premium_percent{};
     pfs::TreeConfig tree_config;
     std::vector<std::vector<pfs::Action>> add_lines;
     std::vector<std::vector<pfs::Action>> remove_lines;
@@ -64,7 +71,15 @@ pfs::Result<GameFile> read_tree_file(const std::filesystem::path& path);
 // cards themselves are checked when the card configuration is built.
 pfs::Status set_board(GameFile& file, const std::string& board);
 
-// Replaces the game's ranges with those of a range file ("poker-tools/range" versions 1 and 2, written
+// Copies risk_premium_percent into the tree configuration as fractions. Call it after every
+// source of premiums has been read and before build_action_tree, which validates them.
+void apply_risk_premium(GameFile& file);
+
+// The bubble factor a risk premium corresponds to: losing a chip is worth this much more than
+// winning one. premium is a percentage below 50.
+double bubble_factor(double premium_percent);
+
+// Replaces the game's ranges with those of a range file ("poker-tools/range" versions 1 to 3, written
 // by poker-tools' hrc-analyzer --export-range), so one game tree can be solved with different
 // ranges. The file has OOP and IP ranges in GTO+ syntax, and optionally the players' stacks and
 // the pot (in its own chip units). Sets warning if its stack-to-pot ratio differs from the game's.

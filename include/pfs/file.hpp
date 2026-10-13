@@ -27,7 +27,9 @@
 namespace pfs {
 
 inline constexpr uint32_t kFileMagic = 0x43534650;  // "PFSC"
-inline constexpr uint16_t kFileFormatVersion = 1;
+// 2 added the per-player risk premium to the tree configuration. The reader requires an exact
+// match, so a version 1 file is rejected rather than mis-parsed from the rake onward.
+inline constexpr uint16_t kFileFormatVersion = 2;
 
 enum class DataType : uint8_t { Game = 0, Bunching = 1 };
 

@@ -246,7 +246,7 @@ void compute_best_cfv_recursive(std::span<float> result, G& game, typename G::No
 }  // namespace detail
 
 // The bias, (starting pot) / 2, is already subtracted from the returned EVs,
-// which makes them zero-sum when the game is not raked.
+// which makes them zero-sum unless the game is raked or has a risk premium.
 template <GameLike G>
 std::array<float, 2> compute_current_ev(G& game) {
     if (!game.is_ready() && !game.is_solved()) PFS_PANIC("Game is not ready");
@@ -287,7 +287,11 @@ float compute_exploitability(G& game) {
     if (!game.is_ready() && !game.is_solved()) PFS_PANIC("Game is not ready");
 
     const std::array<float, 2> mes_ev = compute_mes_ev(game);
-    if (!game.is_raked()) return (mes_ev[0] + mes_ev[1]) * 0.5f;
+    // The shortcut is only valid because the current strategy's values cancel when the game is
+    // zero-sum. Otherwise this is the average of the two players' gains from deviating, which is
+    // zero exactly at a Nash equilibrium -- but in a game that is not zero-sum, self-play is not
+    // guaranteed to drive it to zero.
+    if (game.is_zero_sum()) return (mes_ev[0] + mes_ev[1]) * 0.5f;
 
     const std::array<float, 2> current_ev = compute_current_ev(game);
     return ((mes_ev[0] - current_ev[0]) + (mes_ev[1] - current_ev[1])) * 0.5f;

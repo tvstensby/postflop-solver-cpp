@@ -31,7 +31,13 @@ void PostFlopGame::evaluate_internal(std::span<float> result, const PostFlopNode
     const double half_pot = 0.5 * pot;
     const double rake = fmin_raw(pot * tree_config_.rake_rate, tree_config_.rake_cap);
     const double amount_win = (half_pot - rake) / num_combinations_;
-    const double amount_lose = -half_pot / num_combinations_;
+    // Losing is the only outcome where the player ends below the stack they started the hand
+    // with, and there they are down exactly their own matched contribution, node.amount(). The
+    // risk premium weights that loss by the bubble factor; winning and chopping are gains and
+    // keep their chip value. half_pot is strictly positive and node.amount() is non-negative, so
+    // a zero premium leaves this expression bit-identical to -half_pot.
+    const double amount_lose =
+        -(half_pot + risk_loss_extra(player) * node.amount()) / num_combinations_;
 
     const std::vector<Hole>& player_cards = private_cards_[player];
     const std::vector<Hole>& opponent_cards = private_cards_[player ^ 1];

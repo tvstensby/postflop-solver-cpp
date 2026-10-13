@@ -184,6 +184,20 @@ public:
     bool is_raked() const noexcept {
         return tree_config_.rake_rate > 0.0 && tree_config_.rake_cap > 0.0;
     }
+    // Exactly, not within a tolerance: a premium too small to register here would still change
+    // the payoffs, and the game would then take the zero-sum exploitability path and report a
+    // silently wrong number.
+    bool has_risk_premium() const noexcept {
+        return tree_config_.risk_premium[0] != 0.0 || tree_config_.risk_premium[1] != 0.0;
+    }
+    bool is_zero_sum() const noexcept { return !is_raked() && !has_risk_premium(); }
+    // The player's bubble factor minus one, i.e. what the risk premium adds to the weight of a
+    // lost chip: BF - 1 = 4r / (1 - 2r). The branch keeps this an exact +0.0 when the premium is
+    // off, which is what makes the terminal payoffs bit-identical to a chip-EV solve.
+    double risk_loss_extra(size_t player) const noexcept {
+        const double premium = tree_config_.risk_premium[player];
+        return premium == 0.0 ? 0.0 : 4.0 * premium / (1.0 - 2.0 * premium);
+    }
     bool is_compression_enabled() const noexcept { return is_compression_enabled_; }
     std::span<const uint8_t> isomorphic_chances(const PostFlopNode& node) const;
     const SwapList& isomorphic_swap(const PostFlopNode& node, size_t index) const;

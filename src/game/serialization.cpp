@@ -164,6 +164,10 @@ void write_tree_config(BinWriter& w, const TreeConfig& c) {
     w.i32(c.effective_stack);
     w.f64(c.rake_rate);
     w.f64(c.rake_cap);
+    // Load regenerates the counterfactual values from the saved strategy, which re-runs the
+    // terminal evaluation, so a premium that is not persisted would come back as a chip-EV
+    // reading of a risk-averse strategy.
+    for (double premium : c.risk_premium) w.f64(premium);
     for (const auto& s : c.flop_bet_sizes) write_bet_sizes(w, s);
     for (const auto& s : c.turn_bet_sizes) write_bet_sizes(w, s);
     for (const auto& s : c.river_bet_sizes) write_bet_sizes(w, s);
@@ -191,6 +195,7 @@ TreeConfig read_tree_config(BinReader& r) {
     c.effective_stack = r.i32();
     c.rake_rate = r.f64();
     c.rake_cap = r.f64();
+    for (double& premium : c.risk_premium) premium = r.f64();
     for (auto& s : c.flop_bet_sizes) s = read_bet_sizes(r);
     for (auto& s : c.turn_bet_sizes) s = read_bet_sizes(r);
     for (auto& s : c.river_bet_sizes) s = read_bet_sizes(r);

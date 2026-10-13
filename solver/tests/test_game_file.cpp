@@ -35,11 +35,25 @@ std::string tree_json(const char* street) {
     return text;
 }
 
-std::string range_json(bool with_pot) {
+std::string range_json(bool with_pot, const char* risk_premium = nullptr) {
     return std::string(R"json({ "format": "poker-tools/range", "version": 2,
   "positions": { "OOP": "MP", "IP": "LP" },
   "ranges": { "OOP": "AA,KK,[50.0]QQ[/50.0]", "IP": "AA-JJ,AKs" })json") +
-           (with_pot ? R"json(, "stacks": { "OOP": 84.0, "IP": 84.0 }, "pot": 13.0)json" : "") + " }";
+           (with_pot ? R"json(, "stacks": { "OOP": 84.0, "IP": 84.0 }, "pot": 13.0)json" : "") +
+           (risk_premium ? std::string(", \"riskPremiumPercent\": ") + risk_premium : "") + " }";
+}
+
+// A game file, which carries its own board and ranges.
+std::string game_json(const char* risk_premium = nullptr) {
+    return std::string(R"json({
+  "format": "poker-tools/game", "version": 2, "source": "test.gto", "chipScale": 1000.0,
+  "start": { "id": "OOP:0", "street": "flop", "line": [] },
+  "board": { "flop": "KcQdJs", "turn": null, "river": null },
+  "ranges": { "OOP": "AA,KK", "IP": "QQ,JJ" },
+  "treeConfig": { "initialState": "flop", "startingPot": 6500, "effectiveStack": 42000,
+                  "rakeRate": 0.0, "rakeCap": 0.0 },
+  "addLines": [], "removeLines": [], "nodes": [])json") +
+           (risk_premium ? std::string(", \"riskPremiumPercent\": ") + risk_premium : "") + " }";
 }
 
 std::filesystem::path write_file(const std::string& name, const std::string& text) {
@@ -133,6 +147,56 @@ PFS_TEST(game_file, board_must_match_the_street_the_tree_starts_on) {
         CHECK(file.value().flop == "KcQdJs" && file.value().turn == "Th" && file.value().river.empty());
     }
     std::filesystem::remove(path);
+}
+
+// The premium travels with the ranges, because the preflop ranges are normally solved under it:
+// a game file can carry it, and a range file's premium replaces it just as its ranges do.
+PFS_TEST(game_file, risk_premium_comes_from_the_files_that_carry_ranges) {
+    const std::filesystem::path plain_game = write_file("g1.json", game_json());
+    const std::filesystem::path premium_game = write_file("g2.json", game_json(R"({"OOP": 2.0, "IP": 7.5})"));
+    const std::filesystem::path plain_range = write_file("r1.json", range_json(false));
+    const std::filesystem::path premium_range = write_file("r2.json", range_json(false, R"({"OOP": 1.0, "IP": 3.0})"));
+
+    // Absent means chip EV, and the stored fractions stay 0.
+    Result<GameFile> none = read_game_file(plain_game);
+    CHECK(none.is_ok());
+    if (none) {
+        CHECK_NEAR(none.value().risk_premium_percent[0], 0.0, 0.0);
+        apply_risk_premium(none.value());
+        CHECK_NEAR(none.value().tree_config.risk_premium[1], 0.0, 0.0);
+    }
+
+    // Percent in the file, fraction in the tree configuration, [OOP, IP] throughout.
+    Result<GameFile> from_game = read_game_file(premium_game);
+    CHECK(from_game.is_ok());
+    if (from_game) {
+        CHECK_NEAR(from_game.value().risk_premium_percent[0], 2.0, 0.0);
+        CHECK_NEAR(from_game.value().risk_premium_percent[1], 7.5, 0.0);
+        apply_risk_premium(from_game.value());
+        CHECK_NEAR(from_game.value().tree_config.risk_premium[0], 0.02, 1e-12);
+        CHECK_NEAR(from_game.value().tree_config.risk_premium[1], 0.075, 1e-12);
+
+        // A range file without premiums leaves the game file's in place.
+        std::string warning;
+        CHECK(read_range_file(from_game.value(), plain_range, warning).is_ok());
+        CHECK_NEAR(from_game.value().risk_premium_percent[0], 2.0, 0.0);
+        // One with premiums replaces them.
+        CHECK(read_range_file(from_game.value(), premium_range, warning).is_ok());
+        CHECK_NEAR(from_game.value().risk_premium_percent[0], 1.0, 0.0);
+        CHECK_NEAR(from_game.value().risk_premium_percent[1], 3.0, 0.0);
+    }
+
+    // Out of range is rejected rather than clamped: at 50 the bubble factor is infinite.
+    const std::filesystem::path bad = write_file("g3.json", game_json(R"({"OOP": 50.0, "IP": 0.0})"));
+    CHECK(!read_game_file(bad).is_ok());
+    const std::filesystem::path negative = write_file("g4.json", game_json(R"({"OOP": 0.0, "IP": -1.0})"));
+    CHECK(!read_game_file(negative).is_ok());
+
+    CHECK_NEAR(bubble_factor(0.0), 1.0, 0.0);
+    CHECK_NEAR(bubble_factor(2.0), 1.0 + 4.0 * 0.02 / (1.0 - 2.0 * 0.02), 1e-12);
+
+    for (const auto& p : {plain_game, premium_game, plain_range, premium_range, bad, negative})
+        std::filesystem::remove(p);
 }
 
 PFS_TEST(game_file, wrong_kind_of_file_is_refused) {

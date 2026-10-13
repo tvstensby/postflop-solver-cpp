@@ -82,6 +82,7 @@ tree_config.effective_stack = 900;
 const auto sizes = pfs::BetSizeOptions::parse("60%, e, a", "2.5x").value();
 tree_config.turn_bet_sizes = {sizes, sizes};
 tree_config.river_bet_sizes = {sizes, sizes};
+tree_config.risk_premium = {0.0, 0.0};   // chip EV; see "Risk premium" below
 
 auto tree = pfs::ActionTree::create(std::move(tree_config)).value();
 auto game = pfs::PostFlopGame::with_config(std::move(card_config), std::move(tree)).value();
@@ -92,6 +93,46 @@ pfs::solve(*game, 1000, 1.0f, true);
 game->cache_normalized_weights();
 const auto ev = game->expected_values(0); // 0 = OOP
 ```
+
+### Risk premium
+
+By default the solver maximises chip EV, so it takes any line with EV above zero. In a tournament
+losing chips costs more equity than winning the same chips gains, so a line has to clear a higher
+bar. `TreeConfig::risk_premium` gives each player that bar as an ICM **risk premium**: the extra
+equity they need before stacking off, as a fraction in `[0, 0.5)`. A premium of `0.02` means the
+player needs 52% rather than 50% to call an all-in for stacks.
+
+Internally the premium becomes a **bubble factor**, the ratio of equity lost when losing to equity
+gained when winning:
+
+```
+BF = (1 + 2 * premium) / (1 - 2 * premium)      0.02 -> 1.0833    0.10 -> 1.5
+```
+
+A player's losing payoffs are weighted by their bubble factor; winning and chopping keep their chip
+value. Equity is unaffected. The premium is a fixed linearisation of ICM, not an ICM
+implementation: there is no payout ladder and no stack-dependent recalculation.
+
+Four consequences:
+
+- **The game is no longer zero-sum** — as with rake, which is why the machinery already exists.
+  `is_zero_sum()` returns false and `compute_exploitability` measures each player's gain from
+  deviating rather than summing the best responses. Unlike rake, the asymmetry is between the
+  players, and two-player Discounted CFR is only guaranteed to converge to a Nash equilibrium in
+  zero-sum games, so the reported number can plateau above the target. On the example game in
+  `simulations/` a 2% premium converges indistinguishably from chip EV; see `STATUS.md`.
+- **The reported EVs are risk-adjusted, not chips.** `ev_oop + ev_ip` no longer equals the pot, and
+  a fold is no longer worth 0: it forfeits the chips already committed, which the premium weights.
+- **Only postflop chips are priced.** The preflop investment sits in `starting_pot` and is treated
+  as sunk, so the bubble factor should be calibrated at the stack each player has when the postflop
+  hand begins. A large pot against short stacks shows little risk aversion because little is left
+  to lose.
+- **16-bit mode loses precision.** Values are quantised against the largest magnitude in a slice,
+  which a premium inflates, so `allocate_memory(true)` is a poor fit for large premiums.
+
+A premium cannot be combined with a rake large enough to exceed the starting pot, because a chopped
+pot would then be a net loss and the model only weights the losing outcome. `ActionTree::create`
+rejects that combination.
 
 The solver also works with any type satisfying the `pfs::GameLike` concept, not
 just `PostFlopGame`. [tests/test_kuhn.cpp](tests/test_kuhn.cpp) and
@@ -120,7 +161,8 @@ solved tree as a solution file, or both:
 
 ```sh
 postflop-solver game.json [--output result.json] [--solution result.pfsol] [--ranges ranges.json]
-                [--iterations 1000] [--exploitability 0.25] [--compress] [--quiet]
+                [--iterations 1000] [--exploitability 0.25] [--compress]
+                [--risk-premium <oop> <ip>] [--quiet]
 ```
 
 `--ranges` solves the game tree with the ranges of a range file (`poker-tools/range`,
@@ -144,6 +186,21 @@ tree file.
 stores the solver data as 16-bit integers. The input format is described in
 `solver/src/game_file.hpp` and the output format in `solver/src/result_file.hpp`. The
 result has the strategy, EVs and equity per hand for every node of the first street.
+
+`--risk-premium <oop> <ip>` takes both players' ICM risk premiums as percentages, since they
+need not be the same — `--risk-premium 2 5` gives OOP 2% and IP 5%, and `--risk-premium 0 0`
+is the chip-EV default. See [Risk premium](#risk-premium) for what the number means and what
+it changes. The game and range files may carry their own `riskPremiumPercent`, which the
+command line overrides:
+
+```json
+"riskPremiumPercent": { "OOP": 2.0, "IP": 5.0 }
+```
+
+It belongs in the files that carry ranges, because the preflop ranges are normally solved
+under the same premiums; a range file's premiums replace the game file's just as its ranges
+do. Both the result and the solution file always report `riskPremiumPercent` and the derived
+`bubbleFactor`, so a reader never has to guess whether the EVs are chips or risk-adjusted.
 
 `--solution` writes every street and every dealt card to a binary file, specified in
 [documentation/SolverFileFormat.md](documentation/SolverFileFormat.md). It is meant for

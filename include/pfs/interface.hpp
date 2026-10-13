@@ -65,6 +65,11 @@ public:
 
     bool is_ready() { return true; }
     bool is_raked() { return false; }
+    // Whether the two players' centered payoffs sum to zero at every terminal. When they do,
+    // exploitability is just the sum of the best-response values; when they do not, it has to be
+    // measured against the current strategy's values as well. Not in the Rust, which gates that
+    // on is_raked() because rake was the only thing that could break the sum.
+    bool is_zero_sum() { return true; }
     bool is_compression_enabled() { return false; }
     std::span<const uint8_t> isomorphic_chances(const Node&) { return {}; }
     const SwapList& isomorphic_swap(const Node&, size_t) { PFS_UNREACHABLE(); }
@@ -101,6 +106,7 @@ concept GameLike = GameNodeLike<typename G::Node> &&
     g.set_solved();
     { g.is_ready() } -> std::convertible_to<bool>;
     { g.is_raked() } -> std::convertible_to<bool>;
+    { g.is_zero_sum() } -> std::convertible_to<bool>;
     { g.is_compression_enabled() } -> std::convertible_to<bool>;
     { g.isomorphic_chances(n) } -> std::same_as<std::span<const uint8_t>>;
     { g.locking_strategy(n) } -> std::same_as<std::span<const float>>;

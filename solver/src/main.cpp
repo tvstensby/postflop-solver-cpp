@@ -10,6 +10,7 @@
 #include <pfs/solver.hpp>
 #include <pfs/utility.hpp>
 
+#include <array>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -53,6 +54,11 @@ void print_usage() {
                  "                              percentage of the starting pot (default: %g).\n"
                  "  --compress                  Store the solver data as 16-bit integers, which\n"
                  "                              halves the memory use.\n"
+                 "  --risk-premium <oop> <ip>   The players' ICM risk premiums, in percent: the\n"
+                 "                              extra equity each needs before stacking off. 2\n"
+                 "                              means 52%% instead of 50%% for an all-in for stacks.\n"
+                 "                              Below 50, 0 for chip EV (the default). Overrides\n"
+                 "                              the riskPremiumPercent of the input files.\n"
                  "  --quiet                     Do not print progress.\n"
                  "\n"
                  "Solution file options:\n"
@@ -91,6 +97,11 @@ bool parse_percent(const std::string& text, double& value) {
     return !text.empty() && *end == '\0' && value >= 0.0 && value <= 100.0;
 }
 
+// A risk premium is an equity share, so at 50% the bubble factor would be infinite.
+bool parse_premium(const std::string& text, double& value) {
+    return parse_percent(text, value) && value < 50.0;
+}
+
 int fail(const std::string& message) {
     std::fprintf(stderr, "Error: %s\n", message.c_str());
     return EXIT_FAILURE;
@@ -107,6 +118,8 @@ int run(int argc, char* argv[]) {
     settings.max_iterations = kDefaultIterations;
     settings.target_exploitability_percent = kDefaultExploitabilityPercent;
     SolutionSettings solution_settings;
+    std::array<double, 2> risk_premium{};  // percentages, [OOP, IP]
+    bool risk_premium_given = false;
     bool quiet = false;
 
     for (int i = 1; i < argc; ++i) {
@@ -145,6 +158,15 @@ int run(int argc, char* argv[]) {
         } else if (arg == "--exploitability" && i + 1 < argc) {
             if (!parse_percent(argv[++i], settings.target_exploitability_percent))
                 return fail(std::string("invalid exploitability '") + argv[i] + "' (a percentage is needed)");
+        } else if (arg == "--risk-premium" && i + 2 < argc) {
+            for (size_t player = 0; player < 2; ++player) {
+                const std::string value = argv[++i];
+                if (!parse_premium(value, risk_premium[player]))
+                    return fail("invalid " + std::string(player == 0 ? "OOP" : "IP") +
+                                " risk premium '" + value +
+                                "' (a percentage of at least 0 and below 50 is needed)");
+            }
+            risk_premium_given = true;
         } else if (arg == "--compress") {
             settings.compression = true;
         } else if (arg == "--quiet") {
@@ -189,6 +211,10 @@ int run(int argc, char* argv[]) {
         if (!status) return fail(status.error());
         if (!warning.empty()) std::fprintf(stderr, "Warning: %s\n", warning.c_str());
     }
+    // The command line wins over the premiums the input files carry.
+    if (risk_premium_given) file.value().risk_premium_percent = risk_premium;
+    apply_risk_premium(file.value());
+
     pfs::Result<pfs::ActionTree> tree = build_action_tree(file.value());
     if (!tree) return fail(tree.error());
     pfs::Result<pfs::CardConfig> cards = build_card_config(file.value());
@@ -210,6 +236,13 @@ int run(int argc, char* argv[]) {
                     from_tree ? "" : file.value().start_id.c_str(), game.num_private_hands(0),
                     game.num_private_hands(1), static_cast<double>(stats.memory_bytes) / (1024.0 * 1024.0),
                     stats.threads);
+        if (game.has_risk_premium()) {
+            const std::array<double, 2>& premium = file.value().risk_premium_percent;
+            std::printf("Risk premium: OOP %g%% (bubble factor %.4f), IP %g%% (%.4f). EVs are "
+                        "risk-adjusted, not chips.\n",
+                        premium[0], bubble_factor(premium[0]), premium[1],
+                        bubble_factor(premium[1]));
+        }
     }
 
     const auto start = std::chrono::steady_clock::now();

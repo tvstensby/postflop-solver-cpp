@@ -43,6 +43,23 @@ std::string line_to_string(const std::vector<Action>& line) {
     return line.empty() ? "(root)" : pfs::actions_to_string(line);
 }
 
+// Reads the optional riskPremiumPercent of a file that carries ranges, as percentages. Absent
+// leaves the premiums as they are, so a range file without them keeps the game file's.
+pfs::Status read_risk_premium(const json& data, std::array<double, 2>& premium) {
+    if (!data.contains("riskPremiumPercent")) return pfs::Status::ok();
+    const json& item = data.at("riskPremiumPercent");
+    const char* const names[2] = {"OOP", "IP"};
+    for (size_t player = 0; player < 2; ++player) {
+        const double value = item.value(names[player], 0.0);
+        if (!(value >= 0.0 && value < 50.0))
+            return pfs::Status::err(std::string("Risk premium of ") + names[player] +
+                                    " must be at least 0 and below 50 percent: " +
+                                    std::to_string(value));
+        premium[player] = value;
+    }
+    return pfs::Status::ok();
+}
+
 }  // namespace
 
 Result<Action> parse_action(const std::string& text) {
@@ -118,7 +135,7 @@ Result<GameFile> read_game_file(const std::filesystem::path& path) {
         if (data.value("format", "") != "poker-tools/game")
             return Result<GameFile>::err(path.string() + " is not a poker-tools exporter game file");
         const int version = data.value("version", 0);
-        if (version != 1 && version != 2)
+        if (version < 1 || version > 3)
             return Result<GameFile>::err("Unsupported game file version " +
                                          std::to_string(data.value("version", 0)));
 
@@ -133,6 +150,8 @@ Result<GameFile> read_game_file(const std::filesystem::path& path) {
         file.river = optional_card(data.at("board").at("river"));
         file.ranges[0] = data.at("ranges").at("OOP").get<std::string>();
         file.ranges[1] = data.at("ranges").at("IP").get<std::string>();
+        pfs::Status premium = read_risk_premium(data, file.risk_premium_percent);
+        if (!premium) return Result<GameFile>::err(premium.error());
 
         pfs::Status tree = read_tree_parts(data, file);
         if (!tree) return Result<GameFile>::err(tree.error());
@@ -187,6 +206,16 @@ pfs::Status set_board(GameFile& file, const std::string& board) {
     return pfs::Status::ok();
 }
 
+void apply_risk_premium(GameFile& file) {
+    for (size_t player = 0; player < 2; ++player)
+        file.tree_config.risk_premium[player] = file.risk_premium_percent[player] / 100.0;
+}
+
+double bubble_factor(double premium_percent) {
+    const double premium = premium_percent / 100.0;
+    return (1.0 + 2.0 * premium) / (1.0 - 2.0 * premium);
+}
+
 pfs::Status read_range_file(GameFile& file, const std::filesystem::path& path, std::string& warning) {
     std::ifstream stream(path, std::ios::binary);
     if (!stream) return pfs::Status::err("Could not open " + path.string());
@@ -198,7 +227,7 @@ pfs::Status read_range_file(GameFile& file, const std::filesystem::path& path, s
         // Version 2 has the stacks and pot in chips, version 1 in hundredths of a chip. Only
         // their ratio is used, so both work.
         const int version = data.value("version", 0);
-        if (version != 1 && version != 2)
+        if (version < 1 || version > 3)
             return pfs::Status::err("Unsupported range file version " +
                                     std::to_string(data.value("version", 0)));
 
@@ -206,6 +235,10 @@ pfs::Status read_range_file(GameFile& file, const std::filesystem::path& path, s
         file.ranges[1] = data.at("ranges").at("IP").get<std::string>();
         file.gto_ranges = true;
         file.ranges_source = path.filename().string();
+        // The ranges and the premiums they were solved under belong together, so a range file's
+        // premiums replace the game file's just as its ranges do.
+        pfs::Status premium = read_risk_premium(data, file.risk_premium_percent);
+        if (!premium) return premium;
 
         // The pot and stacks are in the range file's own units, so compare the
         // stack-to-pot ratios. Range files written by hand may not have them.

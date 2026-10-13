@@ -119,6 +119,13 @@ void add_solve_fields(ordered_json& out, const GameFile& file, const std::string
                     {"turn", file.turn.empty() ? ordered_json(nullptr) : ordered_json(file.turn)},
                     {"river", file.river.empty() ? ordered_json(nullptr) : ordered_json(file.river)}};
 
+    // Both players' premiums are reported even when they are 0, so a reader never has to guess
+    // whether the EVs below are chips or risk-adjusted.
+    out["riskPremiumPercent"] = {{"OOP", file.risk_premium_percent[0]},
+                                 {"IP", file.risk_premium_percent[1]}};
+    out["bubbleFactor"] = {{"OOP", rounded(bubble_factor(file.risk_premium_percent[0]), 6)},
+                           {"IP", rounded(bubble_factor(file.risk_premium_percent[1]), 6)}};
+
     out["settings"] = {{"maxIterations", settings.max_iterations},
                        {"targetExploitabilityPercent", settings.target_exploitability_percent},
                        {"compression", settings.compression},
@@ -137,7 +144,7 @@ ordered_json build_result(pfs::PostFlopGame& game, const GameFile& file,
                           const SolveStats& stats) {
     ordered_json out;
     out["format"] = "postflop-solver/result";
-    out["version"] = 2;
+    out["version"] = 3;
     add_solve_fields(out, file, input_name, settings, stats);
 
     game.back_to_root();
